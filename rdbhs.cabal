@@ -1,0 +1,25 @@
+Name:                rdbhs
+Version:             0.1
+Synopsis:            Redis RDB dump file parser
+Description:         Streaming parser for Redis .rdb dump files
+Homepage:            https://github.com/PeterScott/rdbhs/
+License:             BSD3
+Author:              esmoov
+Maintainer:          peter@greplin.com
+Category:            Database
+Build-type:          Simple
+Extra-source-files:  README.md
+Cabal-version:       >=1.8
+
+
+Library
+  Exposed-modules: Data.Redis.Rdb
+  Build-depends:   base >= 4.3 && < 5
+                 , conduit >= 0.4.1 && < 0.5
+                 , cereal >= 0.3.5 && < 0.4
+                 , bytestring >= 0.9
+                 , blaze-builder >= 0.3.1 && < 0.4
+                 , hedis >= 0.4.1 && < 0.5
+                 , transformers >= 0.2.2 && < 0.3
+  ghc-options:     -Wall
+  
