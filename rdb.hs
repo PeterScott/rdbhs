@@ -32,15 +32,15 @@ typeHash = 0x04
 
 typeHashZipmap = 0x09
 typeListZiplist = 0x0a
-typeSetIntset =  0x0b 
+typeSetIntset =  0x0b
 typeZsetZiplist = 0x0c
 
 -- Length encodings for types
 
-encInt8  = 0x00 
+encInt8  = 0x00
 encInt16 = 0x01
 encInt32 = 0x02
-encLzf   = 0x03  
+encLzf   = 0x03
 
 -- Redis Opcodes
 opcodeEof = 0xff
@@ -54,7 +54,7 @@ len14bit = 0x01
 len32bit = 0x02
 len_enc = 0x04
 
-data RDBObj = RDBString B8.ByteString | 
+data RDBObj = RDBString B8.ByteString |
               RDBList [B8.ByteString] |
               RDBSet [B8.ByteString] |
               RDBZSet [(B8.ByteString,Double)] |
@@ -80,18 +80,18 @@ get6bitLen :: Word8 -> Integer
 get6bitLen = fromIntegral . (.&.) 0x3f
 
 get14bitLen :: Word16 -> Word16 -> Integer
-get14bitLen f s = fromIntegral (shift (f .&. 0x3f) 8 .|. s) 
+get14bitLen f s = fromIntegral (shift (f .&. 0x3f) 8 .|. s)
 
 combineDistances :: Word16 -> Word16 -> Word16
 combineDistances h l = shift h 8 .|. l
 
 loadTimeMs :: Get Integer
-loadTimeMs = do 
+loadTimeMs = do
              time <- getWord64host
              return $ fromIntegral (fromIntegral time :: Int64)
 
 loadTime :: Get Integer
-loadTime = do 
+loadTime = do
              time <- getWord32host
              return $ fromIntegral (fromIntegral time :: Int64)
 
@@ -109,16 +109,16 @@ loadLen = do
             0x03 -> return (True, get6bitLen first)
 
 loadIntegerObj :: Integer -> Bool -> Get B8.ByteString
-loadIntegerObj len enc = case len of 
+loadIntegerObj len enc = case len of
                             0x00 -> do
                               str <- getWord8
-                              return $ B8.pack $ show (fromIntegral str :: Int8) 
+                              return $ B8.pack $ show (fromIntegral str :: Int8)
                             0x01 -> do
                               str <- getWord16le
                               return $ B8.pack $ show (fromIntegral str :: Int16)
                             0x02 -> do
                               str <- getWord32le
-                              return $ B8.pack $ show (fromIntegral str :: Int32) 
+                              return $ B8.pack $ show (fromIntegral str :: Int32)
 
 loadDoubleValue :: Get Double
 loadDoubleValue = do
@@ -141,7 +141,7 @@ loadLzfStr = do
 decompressLzfStr :: BL8.ByteString -> B8.ByteString
 decompressLzfStr s = B8.concat $ BL8.toChunks str where
                      (Right !str) = runGetLazy (parseLzf BL8.empty) s
-                                
+
 parseLzf :: BL8.ByteString -> Get BL8.ByteString
 parseLzf decodedString = do
                          empty <- isEmpty
@@ -157,7 +157,7 @@ parseLzf decodedString = do
                                         let full_len = (fromIntegral new_len :: Word16) + 7 + 2
                                         low_d <- getWord8
                                         let distance = combineDistances (fromIntegral high_d) (fromIntegral low_d)
-                                        return $ repCopy decodedString distance full_len 
+                                        return $ repCopy decodedString distance full_len
                                       l -> do
                                         low_d <- getWord8
                                         let distance = combineDistances (fromIntegral high_d) (fromIntegral low_d)
@@ -171,7 +171,7 @@ repCopy str dist len = BL8.take (fromIntegral len) (BL8.cycle window) where
                        olen = BL8.length str
 
 loadStringObj :: Bool -> Get B8.ByteString
-loadStringObj enc = do 
+loadStringObj enc = do
                     (isEncType,len) <- loadLen
                     if isEncType
                       then case len of
@@ -215,7 +215,7 @@ loadZipListMembers = do
                             obj <- getZipListMember
                             rest <- loadZipListMembers
                             return (obj:rest)
-                            
+
 getZipListMember :: Get B8.ByteString
 getZipListMember = do
                    prevLen <- getZipLen
@@ -314,14 +314,14 @@ loadZipMapMember = do
                    return (key,val)
 
 getZipMapMemberLen :: Word8 -> Get Int
-getZipMapMemberLen first_len = case first_len of 
+getZipMapMemberLen first_len = case first_len of
 
                                  0xfd -> do
                                    l <- getWord32host
                                    return (fromIntegral l)
 
                                  0xfe -> return 0xfe
-                                 
+
                                  l -> return (fromIntegral l)
 
 loadObj :: Word8 -> Get RDBObj
@@ -348,22 +348,22 @@ loadObj t = case t of
                 return (RDBHash obj)
               -- ^ Load a zipmap encoded hash
               0x09 -> do
-                binstr <- loadStringObj True 
+                binstr <- loadStringObj True
                 let (Right obj) = runGet loadZipMapObj binstr
                 return (RDBHash obj)
               -- ^ Load a ziplist encoded list
               0x0a -> do
-                binstr <- loadStringObj True 
+                binstr <- loadStringObj True
                 let (Right obj) = runGet loadZipListObj binstr
-                return (RDBList obj)          
+                return (RDBList obj)
               -- ^ Load an intset encoded set
               0x0b -> do
-                binstr <- loadStringObj True 
+                binstr <- loadStringObj True
                 let (Right obj) = runGet loadIntSetObj binstr
                 return (RDBSet obj)
               -- ^ Load a ziplist encoded zset
               0x0c -> do
-                binstr <- loadStringObj True 
+                binstr <- loadStringObj True
                 let (Right obj) = runGet loadZipListObj binstr
                 return (RDBZSet $ toZsetPairs obj)
 
@@ -408,7 +408,7 @@ getDBs = do
                 objs <- loadObjs
                 rest <- getDBs
                 return (objs ++ rest)
-           else return [] 
+           else return []
 
 getObjInc :: Get RDBObj
 getObjInc = do
@@ -458,7 +458,7 @@ repParse !input (!st,Just parser) = case result of
                                   where
                                    !result = parser input
 
-printRDB :: ResourceIO m => Sink B8.ByteString m ()
+printRDB :: MonadIO m => Sink B8.ByteString m ()
 printRDB =
   sinkState Nothing
   pushRDB
@@ -476,10 +476,10 @@ pushRDB (Just parser) !input = do liftIO $ mapM_ (\x -> if x == RDBNull then ret
                                      (!st,!p) = repParse input ([],Just parser)
 
 
-loadRDB :: ResourceIO m => R.Connection -> Sink B8.ByteString m (R.Redis (Either R.Reply R.Status))
+loadRDB :: MonadIO m => R.Connection -> Sink B8.ByteString m (R.Redis (Either R.Reply R.Status))
 loadRDB c =
   sinkState Nothing
-  (pushLoad c) 
+  (pushLoad c)
   (\state -> return (R.ping))
 
 saveObj :: RDBObj -> R.Redis ()
@@ -506,10 +506,10 @@ pushLoad c (Just parser) !input = do liftIO $ R.runRedis c $ sequence $ reverse 
                                       where
                                         (!st,!p) = repParse input ([],Just parser)
 
-{-main = do-}
-       {-runResourceT $ C.sourceFile "./dump.rdb" $$ printRDB-}
-
 main = do
-       conn <- R.connect R.defaultConnectInfo
-       runResourceT $ C.sourceFile "./source.rdb" $$ (loadRDB conn)
-        
+       runResourceT $ C.sourceFile "./source.rdb" $$ printRDB
+
+--main = do
+--       conn <- R.connect R.defaultConnectInfo
+--       runResourceT $ C.sourceFile "./source.rdb" $$ (loadRDB conn)
+
