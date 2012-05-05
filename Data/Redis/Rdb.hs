@@ -123,7 +123,7 @@ loadDoubleValue = do
                     0xfe -> return $ read "Infinity"
                     0xfd -> return $ read "NaN"
                     l -> do
-                      val <- getByteString (fromIntegral l)
+                      val <- getBytes (fromIntegral l)
                       return $ read $ B8.unpack val
 
 loadLzfStr :: Get B8.ByteString
@@ -175,7 +175,7 @@ loadStringObj enc = do
                              0x02 -> loadIntegerObj len enc
                              0x03 -> loadLzfStr
                              _    -> undefined
-                      else getByteString (fromIntegral len)
+                      else getBytes (fromIntegral len)
 
 loadListObj :: Get [B8.ByteString]
 loadListObj = do
@@ -219,14 +219,14 @@ getZipListMember = do
                    case (getEncoding header, getSecondEncoding header) of
                      (0x00,_) -> do
                        let len = get6bitLen header
-                       getByteString (fromIntegral len)
+                       getBytes (fromIntegral len)
                      (0x01,_) -> do
                        second_part <- getWord8
                        let len = get14bitLen (fromIntegral header) (fromIntegral second_part)
-                       getByteString (fromIntegral len)
+                       getBytes (fromIntegral len)
                      (0x02,_) -> do
                        len <- getWord32be
-                       getByteString (fromIntegral len)
+                       getBytes (fromIntegral len)
                      (0x03,0x00) -> do
                        obj <- getWord16le
                        return $ B8.pack $ show (fromIntegral obj :: Int16)
@@ -301,12 +301,12 @@ loadZipMapMember :: Get (B8.ByteString,B8.ByteString)
 loadZipMapMember = do
                    first_len <- getWord8
                    key_len <- getZipMapMemberLen first_len
-                   key <- getByteString (fromIntegral key_len)
+                   key <- getBytes (fromIntegral key_len)
                    first_len_v <- getWord8
                    val_len <- getZipMapMemberLen first_len_v
                    free <- getWord8
-                   val <- getByteString val_len
-                   extra <- getByteString (fromIntegral free)
+                   val <- getBytes val_len
+                   extra <- getBytes (fromIntegral free)
                    return (key,val)
 
 getZipMapMemberLen :: Word8 -> Get Int
