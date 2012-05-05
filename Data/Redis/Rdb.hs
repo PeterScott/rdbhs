@@ -1,60 +1,52 @@
 {-# LANGUAGE OverloadedStrings, GADTs, KindSignatures, TypeFamilies, BangPatterns #-}
-module Data.Redis.Rdb (RDBObj (..), loadRDB) where
+module Data.Redis.Rdb (RDBObj (..), parseRDB) where
 
 import Prelude hiding (exp)
-import Blaze.ByteString.Builder
 import Data.Word
 import Data.Int
 import Data.Bits
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy.Char8 as BL8
-import Data.Monoid
 import Data.Serialize
-import Data.Serialize.Get
 import Control.Monad
-import Control.Monad.IO.Class
-import Control.Applicative
 import Debug.Trace
-import qualified System.IO.Unsafe as IOU
 import Data.Conduit hiding (Done,sequence)
-import qualified Data.Conduit.Binary as C
-import qualified Database.Redis as R
 
 redisHeader = BL8.pack "REDIS0003"
 
 -- Redis types
 
-typeString = 0x00
-typeList = 0x01
-typeSet  = 0x02
-typeZset = 0x03
-typeHash = 0x04
+typeString = 0x00 :: Word8
+typeList   = 0x01 :: Word8
+typeSet    = 0x02 :: Word8
+typeZset   = 0x03 :: Word8
+typeHash   = 0x04 :: Word8
 
 -- Encoded types
 
-typeHashZipmap = 0x09
-typeListZiplist = 0x0a
-typeSetIntset =  0x0b
-typeZsetZiplist = 0x0c
+typeHashZipmap  = 0x09 :: Word8
+typeListZiplist = 0x0a :: Word8
+typeSetIntset   = 0x0b :: Word8
+typeZsetZiplist = 0x0c :: Word8
 
 -- Length encodings for types
 
-encInt8  = 0x00
-encInt16 = 0x01
-encInt32 = 0x02
-encLzf   = 0x03
+encInt8  = 0x00 :: Word8
+encInt16 = 0x01 :: Word8
+encInt32 = 0x02 :: Word8
+encLzf   = 0x03 :: Word8
 
 -- Redis Opcodes
-opcodeEof = 0xff
-opcodeSelectdb = 0xfe
-opcodeExpiretime = 0xfd
-opcodeExpiretimems = 0xfc
+opcodeEof          = 0xff :: Word8
+opcodeSelectdb     = 0xfe :: Word8
+opcodeExpiretime   = 0xfd :: Word8
+opcodeExpiretimems = 0xfc :: Word8
 
 -- Redis Length Codes
-len6bit = 0x00
-len14bit = 0x01
-len32bit = 0x02
-len_enc = 0x04
+len6bit  = 0x00 :: Word8
+len14bit = 0x01 :: Word8
+len32bit = 0x02 :: Word8
+len_enc  = 0x04 :: Word8
 
 data RDBObj = RDBString B8.ByteString |
               RDBList [B8.ByteString] |
@@ -109,6 +101,7 @@ loadLen = do
               len <- getWord32be
               return (False, fromIntegral len)
             0x03 -> return (True, get6bitLen first)
+            _    -> undefined
 
 loadIntegerObj :: Integer -> Bool -> Get B8.ByteString
 loadIntegerObj len enc = case len of
@@ -181,6 +174,7 @@ loadStringObj enc = do
                              0x01 -> loadIntegerObj len enc
                              0x02 -> loadIntegerObj len enc
                              0x03 -> loadLzfStr
+                             _    -> undefined
                       else getByteString (fromIntegral len)
 
 loadListObj :: Get [B8.ByteString]
@@ -438,13 +432,6 @@ getObjInc = do
                      return RDBNull
                    _ -> getPair Nothing
 
-{-main = do-}
-       {-testf <- BL8.readFile "./dump.rdb"-}
-       {-print $ show (decode testf :: RDBObj)-}
-
-{-main = do-}
-       {-testf <- BL8.readFile "./dump.rdb"-}
-       {-runGet (processRDB_ printRDBObj)  testf-}
 
 repParse !input (!st,Nothing) = case result of
                                    (Partial parser) -> (st,Just parser)
@@ -460,60 +447,20 @@ repParse !input (!st,Just parser) = case result of
                                   where
                                    !result = parser input
 
--- | Sink: Print an RDB file to stdout.
-printRDB :: Sink B8.ByteString IO ()
-printRDB =
-  sinkState Nothing
-  pushRDB
-  (\state -> return ())
 
-pushRDB Nothing !input = do liftIO $ mapM_ (\x -> if x == RDBNull then return () else print x) st
-                            return $ StateProcessing p
-                            where
-                              (Done _ l) = runGetPartial (getBytes 9) input
-                              (!st,!p) = repParse l ([],Nothing)
+------
 
-pushRDB (Just parser) !input = do liftIO $ mapM_ (\x -> if x == RDBNull then return () else print x) st
-                                  return $ StateProcessing p
-                                   where
-                                     (!st,!p) = repParse input ([],Just parser)
+type RdbParser = B8.ByteString -> Result RDBObj
 
+streamParser :: Monad m => Maybe RdbParser -> B8.ByteString -> m (ConduitStateResult (Maybe RdbParser) input RDBObj)
+streamParser Nothing !input = return $ StateProducing p st
+  where (Done _ l) = runGetPartial (getBytes 9) input
+        (!st,!p) = repParse l ([],Nothing)
 
--- Sink: Send an RDB file to a Redis connection.
-loadRDB :: R.Connection -> Sink B8.ByteString IO (R.Redis (Either R.Reply R.Status))
-loadRDB c =
-  sinkState Nothing
-  (pushLoad c)
-  (\state -> return (R.ping))
+streamParser (Just parser) !input = return $ StateProducing p st
+   where (!st,!p) = repParse input ([],Just parser)
 
-saveObj :: RDBObj -> R.Redis ()
-saveObj RDBNull = do R.ping >> return ()
-saveObj (RDBSelect i) = R.select i >> return ()
-saveObj (RDBPair (exp,key,RDBString val)) = R.set key val >> setExpire exp key
-saveObj (RDBPair (exp,key,RDBList vals)) = R.rpush key vals >> setExpire exp key
-saveObj (RDBPair (exp,key,RDBSet vals)) = R.sadd key vals >> setExpire exp key
-saveObj (RDBPair (exp,key,RDBZSet vals)) = (R.zadd key $ map (\(x,y) -> (y,x)) vals) >> setExpire exp key
-saveObj (RDBPair (exp,key,RDBHash vals)) = R.hmset key vals >> setExpire exp key
-
-setExpire Nothing _ = return ()
-setExpire (Just exp) k = R.expireat k exp >> return ()
-
-
-pushLoad c Nothing !input = do liftIO $ R.runRedis c $ sequence_ $ reverse $ map saveObj st
-                               return $ StateProcessing p
-                               where
-                                 (Done _ l) = runGetPartial (getBytes 9) input
-                                 (!st,!p) = repParse l ([],Nothing)
-
-pushLoad c (Just parser) !input = do _ <- liftIO $ R.runRedis c $ sequence $ reverse $ map saveObj st
-                                     return $ StateProcessing p
-                                      where
-                                        (!st,!p) = repParse input ([],Just parser)
-
---main = do
---       runResourceT $ C.sourceFile "./source.rdb" $$ printRDB
-
---main = do
---       conn <- R.connect R.defaultConnectInfo
---       runResourceT $ C.sourceFile "./source.rdb" $$ (loadRDB conn)
+-- | 'Conduit' that takes RDB input chunks and spits out an 'RDBObj' stream.
+parseRDB :: Monad m => Conduit B8.ByteString m RDBObj
+parseRDB = conduitState Nothing streamParser (\_ -> return [])
 
