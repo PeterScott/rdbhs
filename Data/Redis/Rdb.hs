@@ -48,16 +48,17 @@ len14bit = 0x01 :: Word8
 len32bit = 0x02 :: Word8
 len_enc  = 0x04 :: Word8
 
-data RDBObj = RDBString B8.ByteString |
-              RDBList [B8.ByteString] |
-              RDBSet [B8.ByteString] |
-              RDBZSet [(B8.ByteString,Double)] |
-              RDBHash [(B8.ByteString,B8.ByteString)] |
-              RDBPair (Maybe Integer,B8.ByteString,RDBObj) |
-              RDBDatabase Integer [RDBObj] |
-              RDBSelect Integer |
-              RDBNull |
-              RDB [RDBObj] deriving (Show,Eq)
+data RDBObj = RDBString B8.ByteString
+            | RDBList [B8.ByteString]
+            | RDBSet [B8.ByteString]
+            | RDBZSet [(B8.ByteString,Double)]
+            | RDBHash [(B8.ByteString,B8.ByteString)]
+            | RDBPair (Maybe Integer,B8.ByteString,RDBObj)
+            | RDBDatabase Integer [RDBObj]
+            | RDBSelect Integer
+            | RDBNull
+            | RDB [RDBObj]
+    deriving (Eq, Show)
 
 toZsetPairs :: [B8.ByteString] -> [(B8.ByteString,Double)]
 toZsetPairs [] = []
@@ -65,7 +66,7 @@ toZsetPairs l = (x, read $ B8.unpack y) : toZsetPairs xs where
             (x:(y:[]),xs) = splitAt 2 l
 
 getEncoding :: Word8 -> Word8
-getEncoding = flip shift (-6) . (.&.) 0xC0
+getEncoding = flip shift (-6)
 
 getSecondEncoding :: Word8 -> Word8
 getSecondEncoding = flip shift (-4) . (.&.) 0x30
