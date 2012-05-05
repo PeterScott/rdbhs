@@ -53,9 +53,9 @@ data RDBObj = RDBString B8.ByteString
             | RDBSet [B8.ByteString]
             | RDBZSet [(B8.ByteString,Double)]
             | RDBHash [(B8.ByteString,B8.ByteString)]
-            | RDBPair (Maybe Integer,B8.ByteString,RDBObj)
-            | RDBDatabase Integer [RDBObj]
-            | RDBSelect Integer
+            | RDBPair (Maybe Int) B8.ByteString RDBObj
+            | RDBDatabase Int [RDBObj]
+            | RDBSelect Int
             | RDBNull
             | RDB [RDBObj]
     deriving (Eq, Show)
@@ -71,26 +71,26 @@ getEncoding = flip shift (-6)
 getSecondEncoding :: Word8 -> Word8
 getSecondEncoding = flip shift (-4) . (.&.) 0x30
 
-get6bitLen :: Word8 -> Integer
+get6bitLen :: Word8 -> Int
 get6bitLen = fromIntegral . (.&.) 0x3f
 
-get14bitLen :: Word16 -> Word16 -> Integer
+get14bitLen :: Word16 -> Word16 -> Int
 get14bitLen f s = fromIntegral (shift (f .&. 0x3f) 8 .|. s)
 
 combineDistances :: Word16 -> Word16 -> Word16
 combineDistances h l = shift h 8 .|. l
 
-loadTimeMs :: Get Integer
+loadTimeMs :: Get Int
 loadTimeMs = do
              time <- getWord64host
              return $ fromIntegral (fromIntegral time :: Int64)
 
-loadTime :: Get Integer
+loadTime :: Get Int
 loadTime = do
              time <- getWord32host
              return $ fromIntegral (fromIntegral time :: Int64)
 
-loadLen :: Get (Bool, Integer)
+loadLen :: Get (Bool, Int)
 loadLen = do
           first <- getWord8
           case getEncoding first of
@@ -104,7 +104,7 @@ loadLen = do
             0x03 -> return (True, get6bitLen first)
             _    -> undefined
 
-loadIntegerObj :: Integer -> Bool -> Get B8.ByteString
+loadIntegerObj :: Int -> Bool -> Get B8.ByteString
 loadIntegerObj len enc = case len of
                             0x00 -> do
                               str <- getWord8
@@ -238,7 +238,7 @@ getZipListMember = do
                        obj <- getWord64le
                        return $ B8.pack $ show (fromIntegral obj :: Int64)
 
-getZipLen :: Get Integer
+getZipLen :: Get Int
 getZipLen = do
             prevLen <- getWord8
             case prevLen of
@@ -380,20 +380,20 @@ loadObjs = do
              0xff -> return []
              _ -> getPairs Nothing
 
-getPairs :: Maybe Integer -> Get [RDBObj]
+getPairs :: Maybe Int -> Get [RDBObj]
 getPairs ex = do
               t <- getWord8
               key <- loadStringObj False
               obj <- loadObj t
               rest <- loadObjs
-              return (RDBPair (ex,key,obj):rest)
+              return $ (RDBPair ex key obj):rest
 
-getPair :: Maybe Integer -> Get RDBObj
+getPair :: Maybe Int -> Get RDBObj
 getPair ex = do
               t <- getWord8
               key <- loadStringObj False
               obj <- loadObj t
-              return $ RDBPair (ex,key,obj)
+              return $ RDBPair ex key obj
 
 getDBs :: Get [RDBObj]
 getDBs = do

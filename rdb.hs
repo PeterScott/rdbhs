@@ -22,7 +22,7 @@ printKeylen = do
 -- Sum of all key lengths in an RDB file
 keylen :: Monad m => Sink B8.ByteString m Int
 keylen = parseRDB =$= CL.map klen =$ CL.fold (+) 0
-    where klen (RDBPair (_, _, (RDBString s))) = B8.length s
+    where klen (RDBPair _ _ (RDBString s)) = B8.length s
           klen _ = 0
 
 -- Behold, the small constant memory usage! Victory is mine!
